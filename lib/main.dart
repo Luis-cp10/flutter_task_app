@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'services/api_service.dart';
 
 void main() {
@@ -52,7 +53,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   String filtro = "todas";
 
-  //  FECHA
+  //  CALENDARIO
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+
+  // FECHA
   void seleccionarFecha() async {
     DateTime? picked = await showDatePicker(
       context: context,
@@ -68,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  //  AGREGAR
+  // AGREGAR
   void agregarTarea() async {
     if (tituloController.text.isEmpty || emailController.text.isEmpty) return;
 
@@ -89,12 +94,12 @@ class _HomeScreenState extends State<HomeScreen> {
         tituloController.clear();
         emailController.clear();
         fechaSeleccionada = null;
-        _selectedIndex = 0; // vuelve a home
+        _selectedIndex = 0;
       });
     }
   }
 
-  //  ELIMINAR
+  // ELIMINAR
   void eliminarTarea(int index) {
     setState(() {
       tareas.removeAt(index);
@@ -105,13 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  //  CONTADORES
+  // CONTADORES
   int get hoyCount => tareas
       .where((t) =>
           t.fecha != null &&
-          t.fecha!.day == DateTime.now().day &&
-          t.fecha!.month == DateTime.now().month &&
-          t.fecha!.year == DateTime.now().year &&
+          isSameDay(t.fecha, DateTime.now()) &&
           !t.completada)
       .length;
 
@@ -123,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int get indicadorCount =>
       tareas.where((t) => t.indicador && !t.completada).length;
 
-  // 🔍 FILTRO
+  // FILTRO
   List<Task> get tareasFiltradas {
     DateTime now = DateTime.now();
 
@@ -132,10 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       switch (filtro) {
         case "hoy":
-          return t.fecha != null &&
-              t.fecha!.day == now.day &&
-              t.fecha!.month == now.month &&
-              t.fecha!.year == now.year;
+          return t.fecha != null && isSameDay(t.fecha, now);
         case "programadas":
           return t.fecha != null;
         case "indicador":
@@ -146,7 +146,128 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
   }
 
-  //  DASHBOARD
+  //  CALENDARIO UI
+  Widget _buildCalendar() {
+    return Column(
+      children: [
+        TableCalendar(
+          firstDay: DateTime(2020),
+          lastDay: DateTime(2100),
+          focusedDay: _focusedDay,
+          selectedDayPredicate: (day) =>
+              isSameDay(_selectedDay, day),
+          onDaySelected: (selectedDay, focusedDay) {
+            setState(() {
+              _selectedDay = selectedDay;
+              _focusedDay = focusedDay;
+            });
+          },
+          eventLoader: (day) {
+            return tareas.where((t) {
+              return t.fecha != null &&
+                  isSameDay(t.fecha, day);
+            }).toList();
+          },
+          headerStyle: HeaderStyle(
+            formatButtonVisible: false,
+            titleCentered: true,
+          ),
+          calendarStyle: CalendarStyle(
+            todayDecoration: BoxDecoration(
+              color: Colors.redAccent,
+              shape: BoxShape.circle,
+            ),
+            selectedDecoration: BoxDecoration(
+              color: Colors.black,
+              shape: BoxShape.circle,
+            ),
+            markerDecoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        SizedBox(height: 10),
+        Expanded(
+          child: _selectedDay == null
+              ? Center(child: Text("Selecciona un día"))
+              : _buildTasksForSelectedDay(),
+        )
+      ],
+    );
+  }
+
+  //  TAREAS DEL DÍA
+  Widget _buildTasksForSelectedDay() {
+    final tareasDelDia = tareas.where((t) {
+      return t.fecha != null &&
+          isSameDay(t.fecha, _selectedDay);
+    }).toList();
+
+    if (tareasDelDia.isEmpty) {
+      return Center(child: Text("No hay tareas para este día"));
+    }
+
+    return ListView.builder(
+      itemCount: tareasDelDia.length,
+      itemBuilder: (context, index) {
+        final tarea = tareasDelDia[index];
+
+        return Card(
+          margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ListTile(
+            title: Text(
+              tarea.titulo,
+              style: TextStyle(
+                decoration: tarea.completada
+                    ? TextDecoration.lineThrough
+                    : null,
+              ),
+            ),
+            subtitle: Text(tarea.email),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.flag,
+                    color: tarea.indicador ? Colors.orange : Colors.grey,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      tarea.indicador = !tarea.indicador;
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.check_circle,
+                    color: tarea.completada ? Colors.green : Colors.grey,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      tarea.completada = !tarea.completada;
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: () {
+                    eliminarTarea(index);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // DASHBOARD
   Widget _buildDashboard() {
     return Column(
       children: [
@@ -159,19 +280,18 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             children: [
-              _buildSummaryCard(Icons.calendar_today, "Hoy", hoyCount,
-                  Colors.blueAccent, "hoy"),
-              _buildSummaryCard(Icons.event, "Programado", programadoCount,
-                  Colors.redAccent, "programadas"),
-              _buildSummaryCard(Icons.home, "Todas", todoCount,
-                  Colors.grey, "todas"),
-              _buildSummaryCard(Icons.flag, "Indicador", indicadorCount,
-                  Colors.orange, "indicador"),
+              _buildSummaryCard(Icons.calendar_today, "Hoy",
+                  hoyCount, Colors.blueAccent, "hoy"),
+              _buildSummaryCard(Icons.event, "Programado",
+                  programadoCount, Colors.redAccent, "programadas"),
+              _buildSummaryCard(Icons.home, "Todas",
+                  todoCount, Colors.grey, "todas"),
+              _buildSummaryCard(Icons.flag, "Indicador",
+                  indicadorCount, Colors.orange, "indicador"),
             ],
           ),
         ),
         Divider(),
-
         Expanded(
           child: tareasFiltradas.isEmpty
               ? Center(child: Text("No hay tareas"))
@@ -181,52 +301,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     final tarea = tareasFiltradas[index];
 
                     return Card(
-                      margin:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: ListTile(
-                        leading: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              tarea.completada = true;
-                            });
-                          },
-                          child: Icon(
-                            tarea.completada
-                                ? Icons.check_circle
-                                : Icons.radio_button_unchecked,
-                            color: tarea.completada
-                                ? Colors.green
-                                : Colors.redAccent,
+                        title: Text(
+                          tarea.titulo,
+                          style: TextStyle(
+                            decoration: tarea.completada
+                                ? TextDecoration.lineThrough
+                                : null,
                           ),
                         ),
-                        title: Text(tarea.titulo,
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(tarea.email),
-                            SizedBox(height: 5),
-                            Wrap(
-                              spacing: 6,
-                              children: [
-                                if (tarea.fecha != null)
-                                  Chip(
-                                    label: Text(
-                                        "📅 ${tarea.fecha!.day}/${tarea.fecha!.month}/${tarea.fecha!.year}"),
-                                  ),
-                                if (tarea.indicador)
-                                  Chip(label: Text("Indicador")),
-                              ],
-                            )
-                          ],
-                        ),
-
-                        // 🚩 + 🗑
+                        subtitle: Text(tarea.email),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // 🚩 INDICADOR
                             IconButton(
                               icon: Icon(
                                 Icons.flag,
@@ -240,11 +332,28 @@ class _HomeScreenState extends State<HomeScreen> {
                                 });
                               },
                             ),
+
+                            // ✅ COMPLETAR
                             IconButton(
-                              icon:
-                                  Icon(Icons.delete, color: Colors.red),
-                              onPressed: () =>
-                                  eliminarTarea(index),
+                              icon: Icon(
+                                Icons.check_circle,
+                                color: tarea.completada
+                                    ? Colors.green
+                                    : Colors.grey,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  tarea.completada = !tarea.completada;
+                                });
+                              },
+                            ),
+
+                            // 🗑️ ELIMINAR
+                            IconButton(
+                              icon: Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                eliminarTarea(tareas.indexOf(tarea));
+                              },
                             ),
                           ],
                         ),
@@ -268,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color.fromARGB(255, 255, 255, 255),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -282,73 +391,98 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  //  FORMULARIO DIRECTO
+  // FORM
   Widget _buildAddForm() {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            Text("Nueva Tarea",
-                style:
-                    TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            SizedBox(height: 20),
-
-            TextField(
-              controller: tituloController,
-              decoration: InputDecoration(
-                labelText: "Título",
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Nueva Tarea",
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-
-            SizedBox(height: 15),
-
-            TextField(
-              controller: emailController,
-              decoration: InputDecoration(
-                labelText: "Email",
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-
-            SizedBox(height: 15),
-
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    fechaSeleccionada == null
-                        ? "Sin fecha"
-                        : "📅 ${fechaSeleccionada!.day}/${fechaSeleccionada!.month}/${fechaSeleccionada!.year}",
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.calendar_today),
-                  onPressed: seleccionarFecha,
+          ),
+          SizedBox(height: 20),
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
                 )
               ],
             ),
-
-            SizedBox(height: 20),
-
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 255, 255, 255),
-                minimumSize: Size(double.infinity, 50),
-              ),
-              onPressed: () {
-                agregarTarea();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Tarea agregada 🚀")),
-                );
-              },
-              child: Text("Guardar"),
+            child: Column(
+              children: [
+                TextField(
+                  controller: tituloController,
+                  decoration: InputDecoration(
+                    labelText: "Título de la tarea",
+                    prefixIcon: Icon(Icons.title),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 15),
+                TextField(
+                  controller: emailController,
+                  decoration: InputDecoration(
+                    labelText: "Correo electrónico",
+                    prefixIcon: Icon(Icons.email),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 20),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today, color: Colors.redAccent),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        fechaSeleccionada == null
+                            ? "Selecciona una fecha"
+                            : "${fechaSeleccionada!.day}/${fechaSeleccionada!.month}/${fechaSeleccionada!.year}",
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: seleccionarFecha,
+                      child: Text("Elegir"),
+                    )
+                  ],
+                ),
+                SizedBox(height: 25),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: agregarTarea,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      "Guardar Tarea",
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -358,11 +492,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 0:
         return _buildDashboard();
       case 1:
-        return Center(child: Text("Calendario (pendiente)"));
+        return _buildCalendar();
       case 2:
-        return _buildAddForm(); 
-      case 3:
-        return Center(child: Text("Configuración"));
+        return _buildAddForm();
       default:
         return _buildDashboard();
     }
@@ -376,15 +508,12 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
       ),
       body: _buildContent(),
-
-
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
         backgroundColor: Colors.black,
         selectedItemColor: Colors.redAccent,
         unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed,
         items: [
           BottomNavigationBarItem(
               icon: Icon(Icons.home), label: "Home"),
