@@ -11,7 +11,7 @@ MANUAL TÉCNICO – TASK MANAGER APP
 
 -   Flutter
 -   Dart
--   API (ApiService)
+-   N8n
 ---
 3.  Estructura del proyecto
 
